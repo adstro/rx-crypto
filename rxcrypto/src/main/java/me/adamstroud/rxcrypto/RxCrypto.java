@@ -314,13 +314,13 @@ public class RxCrypto {
         });
     }
 
-    public static Observable<KeyPair> generateKeyPair() {
+    public static Observable<KeyPair> generateKeyPair(@IntRange(from=0) final int keyLength) {
         return Observable.create(new Observable.OnSubscribe<KeyPair>() {
             @Override
             public void call(Subscriber<? super KeyPair> subscriber) {
                 try {
                     KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", PROVIDER);
-                    keyPairGenerator.initialize(4096, new SecureRandom());
+                    keyPairGenerator.initialize(keyLength, new SecureRandom());
                     KeyPair keyPair = keyPairGenerator.generateKeyPair();
 
                     if (!subscriber.isUnsubscribed()) {

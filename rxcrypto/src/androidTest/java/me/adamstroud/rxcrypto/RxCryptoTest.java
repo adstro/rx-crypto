@@ -213,7 +213,7 @@ public class RxCryptoTest {
     @Test
     public void testGenerateKeyPair() throws Exception {
         final TestSubscriber<KeyPair> testSubscriber = new TestSubscriber<>();
-        RxCrypto.generateKeyPair()
+        RxCrypto.generateKeyPair(4096)
                 .subscribe(testSubscriber);
 
         KeyPair keyPair = checkTestSubscriberAndGetValue(testSubscriber);
@@ -227,7 +227,7 @@ public class RxCryptoTest {
         final TestSubscriber<KeyPair> keyPairTestSubscriber = new TestSubscriber<>();
         final String plainText = "Secret Message";
 
-        RxCrypto.generateKeyPair().subscribe(keyPairTestSubscriber);
+        RxCrypto.generateKeyPair(4096).subscribe(keyPairTestSubscriber);
         KeyPair keyPair = checkTestSubscriberAndGetValue(keyPairTestSubscriber);
 
         final TestSubscriber<byte[]> ivTestSubscriber = new TestSubscriber<>();
