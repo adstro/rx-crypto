@@ -458,18 +458,11 @@ public class RxCrypto {
         return generateRandomBytes(20);
     }
 
-    public static Observable<byte[]> generateSha256Salt() {
-        return generateRandomBytes(32);
-    }
-
     private static Observable<byte[]> generateRandomBytes(final int numberOfBytes) {
         return Observable.create(new Observable.OnSubscribe<byte[]>() {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
                 byte[] randomBytes = new byte[numberOfBytes];
-
-                byte[] test = new SecureRandom().generateSeed(16);
-
                 new SecureRandom().nextBytes(randomBytes);
 
                 if (!subscriber.isUnsubscribed()) {
