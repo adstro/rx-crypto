@@ -27,7 +27,6 @@ import com.google.common.io.CharStreams;
 import org.assertj.core.api.Condition;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.spongycastle.jce.provider.BouncyCastleProvider;
 import org.spongycastle.openssl.EncryptionException;
 import org.spongycastle.openssl.PEMParser;
 import org.spongycastle.util.encoders.Hex;
@@ -62,11 +61,12 @@ import static org.assertj.core.api.Java6Assertions.assertThat;
  */
 public class RxCryptoTest {
     private static final String TAG = RxCryptoTest.class.getSimpleName();
+    private static final String PROVIDER = "SC";
     private static final String AAD = "some_aad";
 
     @BeforeClass
     public static void init() {
-        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+        if (Security.getProvider(PROVIDER) == null) {
             PRNGFixes.apply();
             Security.insertProviderAt(new org.spongycastle.jce.provider.BouncyCastleProvider(), 1);
         }
@@ -364,7 +364,7 @@ public class RxCryptoTest {
 
         X509EncodedKeySpec publicSpec = new X509EncodedKeySpec(publicBytes);
 
-        KeyFactory kf = KeyFactory.getInstance("RSA", BouncyCastleProvider.PROVIDER_NAME);
+        KeyFactory kf = KeyFactory.getInstance("RSA", PROVIDER);
         PublicKey publicKey = kf.generatePublic(publicSpec);
 
         assertThat(publicKey).isNotNull();
@@ -378,7 +378,7 @@ public class RxCryptoTest {
         PemObject pemObject = pemParser.readPemObject();
         pemParser.close();
 
-        KeyFactory kf = KeyFactory.getInstance("RSA", BouncyCastleProvider.PROVIDER_NAME);
+        KeyFactory kf = KeyFactory.getInstance("RSA", PROVIDER);
         final PrivateKey privateKey = kf.generatePrivate(new PKCS8EncodedKeySpec(pemObject.getContent()));
 
         assertThat(privateKey).isNotNull();

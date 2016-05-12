@@ -27,7 +27,6 @@ import org.spongycastle.crypto.engines.AESEngine;
 import org.spongycastle.crypto.modes.GCMBlockCipher;
 import org.spongycastle.crypto.params.AEADParameters;
 import org.spongycastle.crypto.params.KeyParameter;
-import org.spongycastle.jce.provider.BouncyCastleProvider;
 import org.spongycastle.openssl.PEMEncryptedKeyPair;
 import org.spongycastle.openssl.PEMKeyPair;
 import org.spongycastle.openssl.PEMParser;
@@ -79,6 +78,8 @@ import rx.Subscriber;
  * @author Adam Stroud &#60;<a href="mailto:adam.stroud@gmail.com">adam.stroud@gmail.com</a>&#62;
  */
 public class RxCrypto {
+    private static final String PROVIDER = "SC";
+
     static {
         PRNGFixes.apply();
         Security.insertProviderAt(new org.spongycastle.jce.provider.BouncyCastleProvider(), 1);
@@ -106,7 +107,7 @@ public class RxCrypto {
             @Override
             public void call(Subscriber<? super SecretKey> subscriber) {
                 try {
-                    KeyGenerator keyGenerator = KeyGenerator.getInstance(algorithm, BouncyCastleProvider.PROVIDER_NAME);
+                    KeyGenerator keyGenerator = KeyGenerator.getInstance(algorithm, PROVIDER);
                     keyGenerator.init(keyLength, new SecureRandom());
                     SecretKey secretKey = keyGenerator.generateKey();
 
@@ -128,7 +129,7 @@ public class RxCrypto {
             public void call(Subscriber<? super SecretKey> subscriber) {
                 try {
                     SecretKey secretKey = SecretKeyFactory
-                            .getInstance(algorithm, BouncyCastleProvider.PROVIDER_NAME)
+                            .getInstance(algorithm, PROVIDER)
                             .generateSecret(new SecretKeySpec(keyBytes, algorithm));
 
                     if (!subscriber.isUnsubscribed()) {
@@ -181,7 +182,7 @@ public class RxCrypto {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
                 try {
-                    Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, BouncyCastleProvider.PROVIDER_NAME);
+                    Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, PROVIDER);
                     cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH, iv));
                     cipher.updateAAD(aad.getBytes(Charsets.UTF_8));
 
@@ -214,7 +215,7 @@ public class RxCrypto {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
                 try {
-                    Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, BouncyCastleProvider.PROVIDER_NAME);
+                    Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
                     cipher.init(Cipher.ENCRYPT_MODE, publicKey);
                     byte[] cipherText = cipher.doFinal(plaintext);
 
@@ -243,7 +244,7 @@ public class RxCrypto {
             public void call(Subscriber<? super byte[]> subscriber) {
 
                 try {
-                    Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, BouncyCastleProvider.PROVIDER_NAME);
+                    Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, PROVIDER);
                     cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH, iv));
                     cipher.updateAAD(aad.getBytes(Charsets.UTF_8));
                     byte[] plainText = cipher.doFinal(cipherText);
@@ -271,7 +272,7 @@ public class RxCrypto {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
                 try {
-                    Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, BouncyCastleProvider.PROVIDER_NAME);
+                    Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
                     cipher.init(Cipher.DECRYPT_MODE, privateKey);
                     byte[] plainText = cipher.doFinal(cipherText);
 
@@ -305,7 +306,7 @@ public class RxCrypto {
                     // computation time. You should select a value that causes computation
                     // to take >100ms.
 
-                    SecretKeyFactory secretKeyFactory = SecretKeyFactory.getInstance(PBE_TRANSFORMATION, BouncyCastleProvider.PROVIDER_NAME);
+                    SecretKeyFactory secretKeyFactory = SecretKeyFactory.getInstance(PBE_TRANSFORMATION, PROVIDER);
                     KeySpec keySpec = new PBEKeySpec(password, salt, PBE_ITERATIONS, keyLength);
                     SecretKey secretKey = secretKeyFactory.generateSecret(keySpec);
 
@@ -325,7 +326,7 @@ public class RxCrypto {
             @Override
             public void call(Subscriber<? super KeyPair> subscriber) {
                 try {
-                    KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", BouncyCastleProvider.PROVIDER_NAME);
+                    KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", PROVIDER);
                     keyPairGenerator.initialize(4096, new SecureRandom());
                     KeyPair keyPair = keyPairGenerator.generateKeyPair();
 
@@ -345,7 +346,7 @@ public class RxCrypto {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
                 try {
-                    MessageDigest messageDigest = MessageDigest.getInstance(MESSAGE_DIGEST_ALGORITHM, BouncyCastleProvider.PROVIDER_NAME);
+                    MessageDigest messageDigest = MessageDigest.getInstance(MESSAGE_DIGEST_ALGORITHM, PROVIDER);
                     messageDigest.update(input);
                     byte[] hash = messageDigest.digest();
 
@@ -367,18 +368,18 @@ public class RxCrypto {
             public void call(Subscriber<? super PrivateKey> subscriber) {
                 try {
                     PrivateKey privateKey;
-                    JcaPEMKeyConverter converter = new JcaPEMKeyConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME);
+                    JcaPEMKeyConverter converter = new JcaPEMKeyConverter().setProvider(PROVIDER);
                     PEMParser pemParser = new PEMParser(new StringReader(pemContents));
 
                     Object object = pemParser.readObject();
                     if (object instanceof PEMEncryptedKeyPair) {
                         PEMEncryptedKeyPair encryptedKeyPair = (PEMEncryptedKeyPair) object;
-                        PEMKeyPair decryptedKeyPair = encryptedKeyPair.decryptKeyPair(new JcePEMDecryptorProviderBuilder().setProvider(BouncyCastleProvider.PROVIDER_NAME).build(password.toCharArray()));
+                        PEMKeyPair decryptedKeyPair = encryptedKeyPair.decryptKeyPair(new JcePEMDecryptorProviderBuilder().setProvider(PROVIDER).build(password.toCharArray()));
 
                         privateKey = converter.getPrivateKey(decryptedKeyPair.getPrivateKeyInfo());
                     } else if (object instanceof PKCS8EncryptedPrivateKeyInfo) {
                         InputDecryptorProvider provider = new JceOpenSSLPKCS8DecryptorProviderBuilder()
-                                .setProvider(BouncyCastleProvider.PROVIDER_NAME)
+                                .setProvider(PROVIDER)
                                 .build(password.toCharArray());
                         PKCS8EncryptedPrivateKeyInfo info = (PKCS8EncryptedPrivateKeyInfo) object;
 
@@ -439,7 +440,7 @@ public class RxCrypto {
                         JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
 
                         JcePEMEncryptorBuilder builder = new JcePEMEncryptorBuilder(PKCS8_ENCRYPTION_ALGORITHM)
-                                .setProvider(BouncyCastleProvider.PROVIDER_NAME);
+                                .setProvider(PROVIDER);
 
                         writer.writeObject(privateKey, builder.build(password.toCharArray()));
                         writer.close();
