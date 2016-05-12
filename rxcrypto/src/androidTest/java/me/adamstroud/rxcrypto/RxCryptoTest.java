@@ -16,14 +16,33 @@
 
 package me.adamstroud.rxcrypto;
 
+import android.support.test.InstrumentationRegistry;
+import android.util.Base64;
+import android.util.Log;
 import android.util.Pair;
 
-import org.assertj.core.api.Condition;
-import org.junit.Test;
-import org.spongycastle.util.encoders.Hex;
+import com.google.common.base.Charsets;
+import com.google.common.io.CharStreams;
 
+import org.assertj.core.api.Condition;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.spongycastle.jce.provider.BouncyCastleProvider;
+import org.spongycastle.openssl.EncryptionException;
+import org.spongycastle.openssl.PEMParser;
+import org.spongycastle.util.encoders.Hex;
+import org.spongycastle.util.io.pem.PemObject;
+
+import java.io.InputStreamReader;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Security;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 
 import javax.crypto.SecretKey;
@@ -42,7 +61,15 @@ import static org.assertj.core.api.Java6Assertions.assertThat;
  */
 public class RxCryptoTest {
     private static final String TAG = RxCryptoTest.class.getSimpleName();
-    private static final String ENCODING = "UTF-8";
+    private static final String AAD = "some_aad";
+
+    @BeforeClass
+    public static void init() {
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            PRNGFixes.apply();
+            Security.insertProviderAt(new org.spongycastle.jce.provider.BouncyCastleProvider(), 1);
+        }
+    }
 
     @Test
     public void testGenerateSecretKey() throws Exception {
@@ -86,7 +113,7 @@ public class RxCryptoTest {
 
     @Test
     public void testSymmetricEncryptDecrypt() throws Exception {
-        final byte[] plainText = "SecretMessage".getBytes(ENCODING);
+        final byte[] plainText = "Something Very Secret".getBytes(Charsets.UTF_8);
         final TestSubscriber<Pair<byte[], SecretKey>> pairTestSubscriber = new TestSubscriber<>();
         final TestSubscriber<byte[]> encryptTestSubscriber = new TestSubscriber<>();
 
@@ -100,20 +127,30 @@ public class RxCryptoTest {
                 })
                 .subscribe(pairTestSubscriber);
         Pair<byte[], SecretKey> resultPair = checkTestSubscriberAndGetValue(pairTestSubscriber);
+
         final byte[] iv = resultPair.first;
         final SecretKey secretKey = resultPair.second;
 
-        RxCrypto.encrypt(secretKey, iv, RxCrypto.CipherTransformation.GCM, plainText)
+        RxCrypto.encrypt(secretKey, iv, plainText, AAD)
                 .flatMap(new Func1<byte[], Observable<byte[]>>() {
                     @Override
-                    public Observable<byte[]> call(byte[] ciphertext) {
-                        return RxCrypto.decrypt(secretKey, iv, RxCrypto.CipherTransformation.GCM, ciphertext);
+                    public Observable<byte[]> call(byte[] cipherTextAndTag) {
+                        byte[] tag = Arrays.copyOfRange(cipherTextAndTag, cipherTextAndTag.length - (16 / Byte.SIZE), cipherTextAndTag.length);
+                        byte[] cipherText = Arrays.copyOfRange(cipherTextAndTag, 0, (cipherTextAndTag.length - (16 / Byte.SIZE) - 1));
+
+                        Log.d(TAG, "IV = " + Hex.toHexString(iv).toUpperCase());
+                        Log.d(TAG, "KEY = " + Hex.toHexString(secretKey.getEncoded()).toUpperCase());
+                        Log.d(TAG, "TAG = " + Base64.encodeToString(tag, Base64.DEFAULT));
+                        Log.d(TAG, "CIPHER TEXT = " + Base64.encodeToString(cipherText, Base64.DEFAULT));
+                        Log.d(TAG, "COMBINED CIPHER TEXT/TAG = " + Base64.encodeToString(cipherTextAndTag, Base64.DEFAULT));
+
+                        return RxCrypto.decrypt(secretKey, iv, cipherTextAndTag, AAD);
                     }
                 })
                 .subscribe(encryptTestSubscriber);
 
         byte[] resultBytes = checkTestSubscriberAndGetValue(encryptTestSubscriber);
-        assertThat(new String(resultBytes, ENCODING)).isEqualTo(new String(plainText, ENCODING));
+        assertThat(new String(resultBytes, Charsets.UTF_8)).isEqualTo(new String(plainText, Charsets.UTF_8));
     }
 
     @Test
@@ -142,16 +179,34 @@ public class RxCryptoTest {
         byte[] iv = checkTestSubscriberAndGetValue(ivTestSubscriber);
 
         TestSubscriber<byte[]> cipherTextTestSubscriber = new TestSubscriber<>();
-        RxCrypto.encrypt(encryptionKey, iv, RxCrypto.CipherTransformation.GCM, plaintext.getBytes(ENCODING))
+        RxCrypto.encrypt(encryptionKey, iv, plaintext.getBytes(Charsets.UTF_8), AAD)
                 .subscribe(cipherTextTestSubscriber);
         byte[] cipherText = checkTestSubscriberAndGetValue(cipherTextTestSubscriber);
 
         TestSubscriber<byte[]> plaintextTestSubscriber = new TestSubscriber<>();
-        RxCrypto.decrypt(decryptionKey, iv, RxCrypto.CipherTransformation.GCM, cipherText)
+        RxCrypto.decrypt(decryptionKey, iv, cipherText, AAD)
                 .subscribe(plaintextTestSubscriber);
         byte[] plaintextBytes = checkTestSubscriberAndGetValue(plaintextTestSubscriber);
 
-        assertThat(new String(plaintextBytes, ENCODING)).isEqualTo(plaintext);
+        assertThat(new String(plaintextBytes, Charsets.UTF_8)).isEqualTo(plaintext);
+    }
+
+    @Test
+    public void testExternalPbe() throws Exception {
+        final String password = "password";
+        final String salt = "salt";
+        final TestSubscriber<String> testSubscriber = new TestSubscriber<>();
+
+        RxCrypto.generatePasswordBasedSecretKey(password.toCharArray(), 20 * Byte.SIZE, salt.getBytes(Charsets.UTF_8))
+                .map(new Func1<SecretKey, String>() {
+                    @Override
+                    public String call(SecretKey secretKey) {
+                        return Hex.toHexString(secretKey.getEncoded()).toUpperCase();
+                    }
+                })
+        .subscribe(testSubscriber);
+
+        assertThat(checkTestSubscriberAndGetValue(testSubscriber)).isEqualTo("6E88BE8BAD7EAE9D9E10AA061224034FED48D03F");
     }
 
     @Test
@@ -164,7 +219,6 @@ public class RxCryptoTest {
 
         assertThat(keyPair.getPrivate().getAlgorithm()).isEqualTo("RSA");
         assertThat(keyPair.getPublic().getAlgorithm()).isEqualTo("RSA");
-
     }
 
     @Test
@@ -177,22 +231,20 @@ public class RxCryptoTest {
 
         final TestSubscriber<byte[]> ivTestSubscriber = new TestSubscriber<>();
         RxCrypto.generateIV().subscribe(ivTestSubscriber);
-        byte[] iv = checkTestSubscriberAndGetValue(ivTestSubscriber);
 
         final TestSubscriber<byte[]> encryptionTestSubscriber = new TestSubscriber<>();
         RxCrypto.encrypt(keyPair.getPublic(),
-                RxCrypto.CipherTransformation.RSA,
-                plainText.getBytes(ENCODING))
+                plainText.getBytes(Charsets.UTF_8))
                 .subscribe(encryptionTestSubscriber);
         byte[] cipherText = checkTestSubscriberAndGetValue(encryptionTestSubscriber);
 
         final TestSubscriber<byte[]> decryptionTestSubscriber = new TestSubscriber<>();
-        RxCrypto.decrypt(keyPair.getPrivate(), RxCrypto.CipherTransformation.RSA, cipherText)
+        RxCrypto.decrypt(keyPair.getPrivate(), cipherText)
                 .subscribe(decryptionTestSubscriber);
 
          byte[] plaintextBytes = checkTestSubscriberAndGetValue(decryptionTestSubscriber);
 
-        assertThat(new String(plaintextBytes, ENCODING)).isEqualTo(plainText);
+        assertThat(new String(plaintextBytes, Charsets.UTF_8)).isEqualTo(plainText);
     }
 
     @Test
@@ -200,7 +252,7 @@ public class RxCryptoTest {
         final String message = "This is a message.";
         final TestSubscriber<byte[]> testSubscriber = new TestSubscriber<>();
 
-        RxCrypto.generateHash(message.getBytes("UTF-8"))
+        RxCrypto.generateHash(message.getBytes(Charsets.UTF_8))
                 .subscribe(testSubscriber);
         byte[] messageHash = checkTestSubscriberAndGetValue(testSubscriber);
 
@@ -209,11 +261,127 @@ public class RxCryptoTest {
                 "7B74CC83D7A80DDBD569CCD");
     }
 
+    @Test
+    public void testEncryptDecryptPem() throws Exception {
+        final String plainText = "A secret Message";
+
+        TestSubscriber<byte[]> testSubscriber = new TestSubscriber<>();
+        final PublicKey publicKey = readPublicKey();
+        final PrivateKey privateKey = readPrivateKey();
+
+        RxCrypto.encrypt(publicKey, plainText.getBytes(Charsets.UTF_8))
+                .flatMap(new Func1<byte[], Observable<byte[]>>() {
+                    @Override
+                    public Observable<byte[]> call(byte[] cipherText) {
+                        Log.d(TAG, "Cipher Text: " + Base64.encodeToString(cipherText, Base64.DEFAULT));
+                        return RxCrypto.decrypt(privateKey, cipherText);
+                    }
+                })
+                .subscribe(testSubscriber);
+
+        assertThat(new String(checkTestSubscriberAndGetValue(testSubscriber))).isEqualTo(plainText);
+    }
+
+    @Test
+    public void testReadPrivateKeyFromPem_validPassword() throws Exception {
+        final String password = readFile("password.txt").trim();
+        String pemData = readFile("encrypted_private.pem");
+
+        TestSubscriber<PrivateKey> testSubscriber = new TestSubscriber<>();
+
+        RxCrypto.readPrivateKeyFromPem(pemData, password)
+                .subscribe(testSubscriber);
+
+        assertThat(checkTestSubscriberAndGetValue(testSubscriber)).isNotNull();
+    }
+
+    @Test
+    public void testReadPrivateKeyFromPem_wrongPassword() throws Exception {
+        final String password = new String(readFile("password.txt")).trim();
+        final String badPassword = "badPassword";
+
+        assertThat(badPassword).isNotEqualTo(password);
+
+        String pemData = readFile("encrypted_private.pem");
+
+        TestSubscriber<PrivateKey> testSubscriber = new TestSubscriber<>();
+
+        RxCrypto.readPrivateKeyFromPem(pemData, badPassword)
+                .subscribe(testSubscriber);
+
+        testSubscriber.awaitTerminalEvent(10, TimeUnit.SECONDS);
+        testSubscriber.assertNoValues();
+        testSubscriber.assertError(EncryptionException.class);
+    }
+
+    @Test
+    public void testWritePrivateKeyToPemWithPkcs8() throws Exception {
+        TestSubscriber<PrivateKey> testSubscriber = new TestSubscriber<>();
+        PrivateKey privateKey = readPrivateKey();
+        final String password = readFile("password.txt");
+
+        RxCrypto.writePrivateKeyToPemWithPkcs8(privateKey, password)
+                .map(new Func1<byte[], String>() {
+                    @Override
+                    public String call(byte[] bytes) {
+                        String pkcs8 = new String(bytes);
+                        Log.d(TAG, "PKCS8 output = " + pkcs8);
+                        return pkcs8;
+                    }
+                })
+                .flatMap(new Func1<String, Observable<PrivateKey>>() {
+                    @Override
+                    public Observable<PrivateKey> call(String pemContents) {
+                        return RxCrypto.readPrivateKeyFromPem(pemContents, password);
+                    }
+                })
+                .subscribe(testSubscriber);
+
+        assertThat(checkTestSubscriberAndGetValue(testSubscriber).getEncoded()).isEqualTo(privateKey.getEncoded());
+    }
+
     private <T> T checkTestSubscriberAndGetValue(TestSubscriber<T> testSubscriber) {
         testSubscriber.awaitTerminalEvent(10, TimeUnit.SECONDS);
         testSubscriber.assertNoErrors();
         testSubscriber.assertValueCount(1);
         testSubscriber.assertCompleted();
         return testSubscriber.getOnNextEvents().get(0);
+    }
+
+    private String readFile(String filename) throws Exception {
+        return CharStreams.toString(new InputStreamReader(InstrumentationRegistry.getContext().getResources().getAssets().open(filename), Charsets.UTF_8));
+    }
+
+    private PublicKey readPublicKey() throws Exception {
+        PEMParser pemParser =
+                new PEMParser(new InputStreamReader(InstrumentationRegistry.getContext().getResources().getAssets().open("public.pem")));
+
+        PemObject pemObject = pemParser.readPemObject();
+        pemParser.close();
+
+        byte[] publicBytes = pemObject.getContent();
+
+        X509EncodedKeySpec publicSpec = new X509EncodedKeySpec(publicBytes);
+
+        KeyFactory kf = KeyFactory.getInstance("RSA", BouncyCastleProvider.PROVIDER_NAME);
+        PublicKey publicKey = kf.generatePublic(publicSpec);
+
+        assertThat(publicKey).isNotNull();
+
+        return publicKey;
+    }
+
+    private PrivateKey readPrivateKey() throws Exception {
+        PEMParser pemParser =
+                new PEMParser(new InputStreamReader(InstrumentationRegistry.getContext().getResources().getAssets().open("private.pem")));
+        PemObject pemObject = pemParser.readPemObject();
+        pemParser.close();
+
+        KeyFactory kf = KeyFactory.getInstance("RSA", BouncyCastleProvider.PROVIDER_NAME);
+        final PrivateKey privateKey = kf.generatePrivate(new PKCS8EncodedKeySpec(pemObject.getContent()));
+
+        assertThat(privateKey).isNotNull();
+
+        return privateKey;
     }
 }
