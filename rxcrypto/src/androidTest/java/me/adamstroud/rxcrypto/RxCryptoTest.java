@@ -43,6 +43,7 @@ import java.security.Security;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 import javax.crypto.SecretKey;
@@ -138,8 +139,8 @@ public class RxCryptoTest {
                         byte[] tag = Arrays.copyOfRange(cipherTextAndTag, cipherTextAndTag.length - (16 / Byte.SIZE), cipherTextAndTag.length);
                         byte[] cipherText = Arrays.copyOfRange(cipherTextAndTag, 0, (cipherTextAndTag.length - (16 / Byte.SIZE) - 1));
 
-                        Log.d(TAG, "IV = " + Hex.toHexString(iv).toUpperCase());
-                        Log.d(TAG, "KEY = " + Hex.toHexString(secretKey.getEncoded()).toUpperCase());
+                        Log.d(TAG, "IV = " + Hex.toHexString(iv).toUpperCase(Locale.US));
+                        Log.d(TAG, "KEY = " + Hex.toHexString(secretKey.getEncoded()).toUpperCase(Locale.US));
                         Log.d(TAG, "TAG = " + Base64.encodeToString(tag, Base64.DEFAULT));
                         Log.d(TAG, "CIPHER TEXT = " + Base64.encodeToString(cipherText, Base64.DEFAULT));
                         Log.d(TAG, "COMBINED CIPHER TEXT/TAG = " + Base64.encodeToString(cipherTextAndTag, Base64.DEFAULT));
@@ -201,7 +202,7 @@ public class RxCryptoTest {
                 .map(new Func1<SecretKey, String>() {
                     @Override
                     public String call(SecretKey secretKey) {
-                        return Hex.toHexString(secretKey.getEncoded()).toUpperCase();
+                        return Hex.toHexString(secretKey.getEncoded()).toUpperCase(Locale.US);
                     }
                 })
         .subscribe(testSubscriber);
