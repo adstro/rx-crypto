@@ -297,7 +297,7 @@ public class RxCryptoTest {
 
     @Test
     public void testReadPrivateKeyFromPem_wrongPassword() throws Exception {
-        final String password = new String(readFile("password.txt")).trim();
+        final String password = readFile("password.txt").trim();
         final String badPassword = "badPassword";
 
         assertThat(badPassword).isNotEqualTo(password);
