@@ -21,7 +21,6 @@ import android.support.annotation.NonNull;
 
 import com.google.common.base.Charsets;
 
-import org.spongycastle.asn1.cms.GCMParameters;
 import org.spongycastle.crypto.InvalidCipherTextException;
 import org.spongycastle.crypto.engines.AESEngine;
 import org.spongycastle.crypto.modes.GCMBlockCipher;
@@ -41,10 +40,8 @@ import org.spongycastle.openssl.jcajce.JcePEMEncryptorBuilder;
 import org.spongycastle.operator.InputDecryptorProvider;
 import org.spongycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
 
-import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.security.AlgorithmParameters;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyPair;
@@ -143,6 +140,7 @@ public class RxCrypto {
         });
     }
 
+    @Deprecated
     public static Observable<byte[]> encryptNative(@NonNull final SecretKey secretKey,
                                                    @NonNull final byte[] iv,
                                                    @NonNull final byte[] plaintext,
@@ -185,11 +183,7 @@ public class RxCrypto {
                     Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, PROVIDER);
                     cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH, iv));
                     cipher.updateAAD(aad.getBytes(Charsets.UTF_8));
-
                     byte[] cipherText = cipher.doFinal(plaintext);
-
-                    AlgorithmParameters params = cipher.getParameters();
-                    GCMParameters gcmParameters = GCMParameters.getInstance(params.getEncoded());
 
                     if (!subscriber.isUnsubscribed()) {
                         subscriber.onNext(cipherText);
@@ -201,8 +195,7 @@ public class RxCrypto {
                         | IllegalBlockSizeException
                         | BadPaddingException
                         | InvalidKeyException
-                        | InvalidAlgorithmParameterException
-                        | IOException e) {
+                        | InvalidAlgorithmParameterException e) {
                     subscriber.onError(e);
                 }
             }
