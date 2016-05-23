@@ -63,6 +63,10 @@ public class RxCryptoTest {
     private static final String TAG = RxCryptoTest.class.getSimpleName();
     private static final String PROVIDER = "SC";
     private static final String AAD = "some_aad";
+    private static final String PUBLIC_PEM = "public.pem";
+    private static final String PASSWORD_FILE = "password.txt";
+    private static final String ENCRYPTED_PRIVATE_PEM = "encrypted_private.pem";
+    private static final String PRIVATE_PEM = "private.pem";
 
     @BeforeClass
     public static void init() {
@@ -285,8 +289,8 @@ public class RxCryptoTest {
 
     @Test
     public void testReadPrivateKeyFromPem_validPassword() throws Exception {
-        final String password = readFile("password.txt").trim();
-        String pemData = readFile("encrypted_private.pem");
+        final String password = readFile(PASSWORD_FILE).trim();
+        String pemData = readFile(ENCRYPTED_PRIVATE_PEM);
 
         TestSubscriber<PrivateKey> testSubscriber = new TestSubscriber<>();
 
@@ -298,12 +302,12 @@ public class RxCryptoTest {
 
     @Test
     public void testReadPrivateKeyFromPem_wrongPassword() throws Exception {
-        final String password = readFile("password.txt").trim();
+        final String password = readFile(PASSWORD_FILE).trim();
         final String badPassword = "badPassword";
 
         assertThat(badPassword).isNotEqualTo(password);
 
-        String pemData = readFile("encrypted_private.pem");
+        String pemData = readFile(ENCRYPTED_PRIVATE_PEM);
 
         TestSubscriber<PrivateKey> testSubscriber = new TestSubscriber<>();
 
@@ -319,9 +323,9 @@ public class RxCryptoTest {
     public void testWritePrivateKeyToPemWithPkcs8() throws Exception {
         TestSubscriber<PrivateKey> testSubscriber = new TestSubscriber<>();
         PrivateKey privateKey = readPrivateKey();
-        final String password = readFile("password.txt");
+        final String password = readFile(PASSWORD_FILE);
 
-        RxCrypto.writePrivateKeyToPemWithPkcs8(privateKey, password)
+        RxCrypto.writeToPemWithPkcs8(privateKey, password)
                 .map(new Func1<byte[], String>() {
                     @Override
                     public String call(byte[] bytes) {
@@ -341,6 +345,19 @@ public class RxCryptoTest {
         assertThat(checkTestSubscriberAndGetValue(testSubscriber).getEncoded()).isEqualTo(privateKey.getEncoded());
     }
 
+    @Test
+    public void testWritePublicKeyToPem() throws Exception {
+        TestSubscriber<byte[]> testSubscriber = new TestSubscriber<>();
+        PublicKey publicKey = readPublicKey();
+
+        RxCrypto.writeToPem(publicKey)
+                .subscribe(testSubscriber);
+
+        byte[] pemContents = checkTestSubscriberAndGetValue(testSubscriber);
+
+        assertThat(new String(pemContents)).isEqualTo(readFile(PUBLIC_PEM));
+    }
+
     private <T> T checkTestSubscriberAndGetValue(TestSubscriber<T> testSubscriber) {
         testSubscriber.awaitTerminalEvent(10, TimeUnit.SECONDS);
         testSubscriber.assertNoErrors();
@@ -355,7 +372,7 @@ public class RxCryptoTest {
 
     private PublicKey readPublicKey() throws Exception {
         PEMParser pemParser =
-                new PEMParser(new InputStreamReader(InstrumentationRegistry.getContext().getResources().getAssets().open("public.pem")));
+                new PEMParser(new InputStreamReader(InstrumentationRegistry.getContext().getResources().getAssets().open(PUBLIC_PEM)));
 
         PemObject pemObject = pemParser.readPemObject();
         pemParser.close();
@@ -374,7 +391,7 @@ public class RxCryptoTest {
 
     private PrivateKey readPrivateKey() throws Exception {
         PEMParser pemParser =
-                new PEMParser(new InputStreamReader(InstrumentationRegistry.getContext().getResources().getAssets().open("private.pem")));
+                new PEMParser(new InputStreamReader(InstrumentationRegistry.getContext().getResources().getAssets().open(PRIVATE_PEM)));
         PemObject pemObject = pemParser.readPemObject();
         pemParser.close();
 

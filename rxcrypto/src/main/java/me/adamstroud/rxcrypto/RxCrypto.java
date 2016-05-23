@@ -392,8 +392,32 @@ public class RxCrypto {
         });
     }
 
-    public static Observable<byte[]> writePrivateKeyToPemWithPkcs8(@NonNull final PrivateKey privateKey,
-                                                                   @NonNull final String password) {
+    public static Observable<byte[]> writeToPem(@NonNull final PublicKey publicKey) {
+        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+            @Override
+            public void call(Subscriber<? super byte[]> subscriber) {
+                if (!subscriber.isUnsubscribed()) {
+                    try {
+                        StringWriter stringWriter = new StringWriter();
+                        JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
+
+                        writer.writeObject(publicKey);
+                        writer.close();
+
+                        if (!subscriber.isUnsubscribed()) {
+                            subscriber.onNext(stringWriter.toString().getBytes(Charsets.UTF_8));
+                            subscriber.onCompleted();
+                        }
+                    } catch (Throwable t) {
+                        subscriber.onError(t);
+                    }
+                }
+            }
+        });
+    }
+
+    public static Observable<byte[]> writeToPemWithPkcs8(@NonNull final PrivateKey privateKey,
+                                                       @NonNull final String password) {
         return Observable.create(new Observable.OnSubscribe<byte[]>() {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
@@ -422,8 +446,11 @@ public class RxCrypto {
         });
     }
 
-    public static Observable<byte[]> writePrivateKeyToPem(@NonNull final PrivateKey privateKey,
-                                                          @NonNull final String password) {
+    /**
+     * @deprecated
+     */
+    public static Observable<byte[]> writeToPem(@NonNull final PrivateKey privateKey,
+                                                @NonNull final String password) {
         return Observable.create(new Observable.OnSubscribe<byte[]>() {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
