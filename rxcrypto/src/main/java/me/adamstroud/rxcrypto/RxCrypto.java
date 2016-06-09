@@ -39,11 +39,13 @@ import org.spongycastle.openssl.jcajce.JcePEMDecryptorProviderBuilder;
 import org.spongycastle.openssl.jcajce.JcePEMEncryptorBuilder;
 import org.spongycastle.operator.InputDecryptorProvider;
 import org.spongycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.spongycastle.util.io.pem.PemObject;
 
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
@@ -54,6 +56,8 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.spec.KeySpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -131,6 +135,26 @@ public class RxCrypto {
 
                     if (!subscriber.isUnsubscribed()) {
                         subscriber.onNext(secretKey);
+                        subscriber.onCompleted();
+                    }
+                } catch (Throwable e) {
+                    subscriber.onError(e);
+                }
+            }
+        });
+    }
+
+    public static Observable<PrivateKey> generatePrivateKey(@NonNull final String algorithm,
+                                                            @NonNull final byte[] keyBytes) {
+        return Observable.create(new Observable.OnSubscribe<PrivateKey>() {
+            @Override
+            public void call(Subscriber<? super PrivateKey> subscriber) {
+                try {
+                    final KeyFactory keyFactory = KeyFactory.getInstance(algorithm, PROVIDER);
+                    final PrivateKey privateKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
+
+                    if (!subscriber.isUnsubscribed()) {
+                        subscriber.onNext(privateKey);
                         subscriber.onCompleted();
                     }
                 } catch (Throwable e) {
@@ -383,6 +407,34 @@ public class RxCrypto {
 
                     if (!subscriber.isUnsubscribed()) {
                         subscriber.onNext(privateKey);
+                        subscriber.onCompleted();
+                    }
+                } catch (Throwable e) {
+                    subscriber.onError(e);
+                }
+            }
+        });
+    }
+
+    public static Observable<PublicKey> readPublicKeyFromPem(@NonNull final String pemContents) {
+        return Observable.create(new Observable.OnSubscribe<PublicKey>() {
+            @Override
+            public void call(Subscriber<? super PublicKey> subscriber) {
+                try {
+                    PEMParser pemParser = new PEMParser(new StringReader(pemContents));
+
+                    PemObject pemObject = pemParser.readPemObject();
+                    pemParser.close();
+
+                    byte[] publicBytes = pemObject.getContent();
+
+                    X509EncodedKeySpec publicSpec = new X509EncodedKeySpec(publicBytes);
+
+                    KeyFactory kf = KeyFactory.getInstance("RSA", PROVIDER);
+                    PublicKey publicKey = kf.generatePublic(publicSpec);
+
+                    if (!subscriber.isUnsubscribed()) {
+                        subscriber.onNext(publicKey);
                         subscriber.onCompleted();
                     }
                 } catch (Throwable e) {
