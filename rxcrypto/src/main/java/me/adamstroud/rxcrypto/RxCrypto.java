@@ -102,13 +102,13 @@ public class RxCrypto {
      * @param keyLength
      * @return
      */
-    public static Observable<SecretKey> generateSecretKey(@NonNull final String algorithm,
+    public static Observable<SecretKey> generateSecretKey(@NonNull final SecretKeyAlgorithm algorithm,
                                                           @IntRange(from=0) final int keyLength) {
         return Observable.create(new Observable.OnSubscribe<SecretKey>() {
             @Override
             public void call(Subscriber<? super SecretKey> subscriber) {
                 try {
-                    KeyGenerator keyGenerator = KeyGenerator.getInstance(algorithm, PROVIDER);
+                    KeyGenerator keyGenerator = KeyGenerator.getInstance(algorithm.providerString, PROVIDER);
                     keyGenerator.init(keyLength, new SecureRandom());
                     SecretKey secretKey = keyGenerator.generateKey();
 
@@ -123,15 +123,15 @@ public class RxCrypto {
         });
     }
 
-    public static Observable<SecretKey> generateSecretKey(@NonNull final String algorithm,
+    public static Observable<SecretKey> generateSecretKey(@NonNull final SecretKeyAlgorithm algorithm,
                                                           @NonNull final byte[] keyBytes) {
         return Observable.create(new Observable.OnSubscribe<SecretKey>() {
             @Override
             public void call(Subscriber<? super SecretKey> subscriber) {
                 try {
                     SecretKey secretKey = SecretKeyFactory
-                            .getInstance(algorithm, PROVIDER)
-                            .generateSecret(new SecretKeySpec(keyBytes, algorithm));
+                            .getInstance(algorithm.providerString, PROVIDER)
+                            .generateSecret(new SecretKeySpec(keyBytes, algorithm.providerString));
 
                     if (!subscriber.isUnsubscribed()) {
                         subscriber.onNext(secretKey);
@@ -469,7 +469,7 @@ public class RxCrypto {
     }
 
     public static Observable<byte[]> writeToPemWithPkcs8(@NonNull final PrivateKey privateKey,
-                                                       @NonNull final String password) {
+                                                         @NonNull final String password) {
         return Observable.create(new Observable.OnSubscribe<byte[]>() {
             @Override
             public void call(Subscriber<? super byte[]> subscriber) {
@@ -490,6 +490,53 @@ public class RxCrypto {
                             subscriber.onCompleted();
                         }
 
+                    } catch (Throwable e) {
+                        subscriber.onError(e);
+                    }
+                }
+            }
+        });
+    }
+
+    public static Observable<byte[]> wrap(@NonNull final PublicKey publicKey,
+                                          @NonNull final SecretKey secretKey) {
+        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+            @Override
+            public void call(Subscriber<? super byte[]> subscriber) {
+                if (!subscriber.isUnsubscribed()) {
+                    try {
+                        Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
+                        cipher.init(Cipher.WRAP_MODE, publicKey);
+                        final byte[] wrappedKey = cipher.wrap(secretKey);
+
+                        if (!subscriber.isUnsubscribed()) {
+                            subscriber.onNext(wrappedKey);
+                            subscriber.onCompleted();
+                        }
+                    } catch (Throwable e) {
+                        subscriber.onError(e);
+                    }
+                }
+            }
+        });
+    }
+
+    public static Observable<SecretKey> unwrap(@NonNull final PrivateKey privateKey,
+                                               @NonNull final byte[] wrappedKey,
+                                               @NonNull final SecretKeyAlgorithm algorithm) {
+        return Observable.create(new Observable.OnSubscribe<SecretKey>() {
+            @Override
+            public void call(Subscriber<? super SecretKey> subscriber) {
+                if (!subscriber.isUnsubscribed()) {
+                    try {
+                        Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
+                        cipher.init(Cipher.UNWRAP_MODE, privateKey);
+                        SecretKey key = (SecretKey) cipher.unwrap(wrappedKey, algorithm.providerString, Cipher.SECRET_KEY);
+
+                        if (!subscriber.isUnsubscribed()) {
+                            subscriber.onNext(key);
+                            subscriber.onCompleted();
+                        }
                     } catch (Throwable e) {
                         subscriber.onError(e);
                     }

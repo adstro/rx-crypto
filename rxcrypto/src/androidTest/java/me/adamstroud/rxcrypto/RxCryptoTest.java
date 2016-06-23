@@ -35,7 +35,6 @@ import org.spongycastle.util.io.pem.PemObject;
 import java.io.InputStreamReader;
 import java.security.KeyFactory;
 import java.security.KeyPair;
-import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Security;
@@ -78,12 +77,12 @@ public class RxCryptoTest {
 
     @Test
     public void testGenerateSecretKey() throws Exception {
-        final String algorithm = "AES";
+        final SecretKeyAlgorithm secretKeyAlgorithm = SecretKeyAlgorithm.AES;
         final int keySizeInBits = 256;
 
         TestSubscriber<SecretKey> testSubscriber = new TestSubscriber<>();
 
-        RxCrypto.generateSecretKey(algorithm, keySizeInBits)
+        RxCrypto.generateSecretKey(secretKeyAlgorithm, keySizeInBits)
                 .subscribe(testSubscriber);
 
         SecretKey secretKey = checkTestSubscriberAndGetValue(testSubscriber);
@@ -92,7 +91,7 @@ public class RxCryptoTest {
                 .has(new Condition<SecretKey>() {
                     @Override
                     public boolean matches(SecretKey secretKey) {
-                        return algorithm.equals(secretKey.getAlgorithm());
+                        return secretKeyAlgorithm.providerString.equals(secretKey.getAlgorithm());
                     }})
                 .has(new Condition<SecretKey>() {
                     @Override
@@ -102,28 +101,13 @@ public class RxCryptoTest {
     }
 
     @Test
-    public void testGenerateSecretKeyWithInvalidAlgorithm() throws Exception {
-        final String algorithm = "invalidAlgorithm";
-        final int keySizeInBits = 256;
-
-        TestSubscriber<SecretKey> testSubscriber = new TestSubscriber<>();
-
-        RxCrypto.generateSecretKey(algorithm, keySizeInBits)
-                .subscribe(testSubscriber);
-
-        testSubscriber.awaitTerminalEvent(10, TimeUnit.SECONDS);
-        testSubscriber.assertNoValues();
-        testSubscriber.assertError(NoSuchAlgorithmException.class);
-    }
-
-    @Test
     public void testSymmetricEncryptDecrypt() throws Exception {
         final byte[] plainText = "Something Very Secret".getBytes(Charsets.UTF_8);
         final TestSubscriber<Pair<byte[], SecretKey>> pairTestSubscriber = new TestSubscriber<>();
         final TestSubscriber<byte[]> encryptTestSubscriber = new TestSubscriber<>();
 
         Observable.zip(RxCrypto.generateIV(),
-                RxCrypto.generateSecretKey("AES", 256),
+                RxCrypto.generateSecretKey(SecretKeyAlgorithm.AES, 256),
                 new Func2<byte[], SecretKey, Pair<byte[], SecretKey>>() {
                     @Override
                     public Pair<byte[], SecretKey> call(byte[] iv, SecretKey secretKey) {
@@ -358,6 +342,51 @@ public class RxCryptoTest {
         assertThat(new String(pemContents)).isEqualTo(readFile(PUBLIC_PEM));
     }
 
+    @Test
+    public void testWrapUnWrap() throws Exception {
+        TestSubscriber<Pair<SecretKey, SecretKey>> testSubscriber = new TestSubscriber<>();
+
+        Observable.combineLatest(RxCrypto.generateKeyPair(4096),
+                RxCrypto.generateSecretKey(SecretKeyAlgorithm.AES, 256),
+                new Func2<KeyPair, SecretKey, Pair<KeyPair, SecretKey>>() {
+                    @Override
+                    public Pair<KeyPair, SecretKey> call(KeyPair keyPair, SecretKey secretKey) {
+                        return new Pair<>(keyPair, secretKey);
+                    }
+                })
+                .flatMap(new Func1<Pair<KeyPair, SecretKey>, Observable<Triple<KeyPair, SecretKey, byte[]>>>() {
+                    @Override
+                    public Observable<Triple<KeyPair, SecretKey, byte[]>> call(Pair<KeyPair, SecretKey> pair) {
+                        return Observable.combineLatest(Observable.just(pair),
+                                RxCrypto.wrap(pair.first.getPublic(), pair.second),
+                                new Func2<Pair<KeyPair, SecretKey>, byte[], Triple<KeyPair, SecretKey, byte[]>>() {
+                                    @Override
+                                    public Triple<KeyPair, SecretKey, byte[]> call(Pair<KeyPair, SecretKey> pair, byte[] bytes) {
+                                        return new Triple<>(pair.first, pair.second, bytes);
+                                    }
+                                });
+                    }
+                })
+                .flatMap(new Func1<Triple<KeyPair, SecretKey, byte[]>, Observable<Pair<SecretKey, SecretKey>>>() {
+                    @Override
+                    public Observable<Pair<SecretKey, SecretKey>> call(Triple<KeyPair, SecretKey, byte[]> triple) {
+                        return Observable.combineLatest(Observable.just(triple.second),
+                                RxCrypto.unwrap(triple.first.getPrivate(), triple.third, SecretKeyAlgorithm.AES),
+                                new Func2<SecretKey, SecretKey, Pair<SecretKey, SecretKey>>() {
+                                    @Override
+                                    public Pair<SecretKey, SecretKey> call(SecretKey expectedKey, SecretKey actualKey) {
+                                        return new Pair<>(expectedKey, actualKey);
+                                    }
+                                });
+                    }
+                })
+                .subscribe(testSubscriber);
+
+        Pair<SecretKey, SecretKey> pair = checkTestSubscriberAndGetValue(testSubscriber);
+
+        assertThat(pair.second).isEqualTo(pair.first);
+    }
+
     private <T> T checkTestSubscriberAndGetValue(TestSubscriber<T> testSubscriber) {
         testSubscriber.awaitTerminalEvent(10, TimeUnit.SECONDS);
         testSubscriber.assertNoErrors();
@@ -401,5 +430,17 @@ public class RxCryptoTest {
         assertThat(privateKey).isNotNull();
 
         return privateKey;
+    }
+
+    private static class Triple<F, S, T> {
+        public final F first;
+        public final S second;
+        public final T third;
+
+        public Triple(F first, S second, T third) {
+            this.first = first;
+            this.second = second;
+            this.third = third;
+        }
     }
 }
