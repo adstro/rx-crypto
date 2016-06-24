@@ -387,6 +387,18 @@ public class RxCryptoTest {
         assertThat(pair.second).isEqualTo(pair.first);
     }
 
+    @Test
+    public void testReadPublicKeyFromPem() throws Exception {
+        TestSubscriber<PublicKey> testSubscriber = new TestSubscriber<>();
+        final PublicKey expectedPublicKey = readPublicKey();
+
+        RxCrypto.readPublicKeyFromPem(readFile(PUBLIC_PEM))
+                .subscribe(testSubscriber);
+
+        PublicKey actualPublicKey = checkTestSubscriberAndGetValue(testSubscriber);
+        assertThat(actualPublicKey).isEqualTo(expectedPublicKey);
+    }
+
     private <T> T checkTestSubscriberAndGetValue(TestSubscriber<T> testSubscriber) {
         testSubscriber.awaitTerminalEvent(10, TimeUnit.SECONDS);
         testSubscriber.assertNoErrors();
