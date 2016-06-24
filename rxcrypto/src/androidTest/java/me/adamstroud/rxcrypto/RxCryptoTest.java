@@ -101,6 +101,30 @@ public class RxCryptoTest {
     }
 
     @Test
+    public void testGenerateSecretKey_bytes() throws Exception {
+        TestSubscriber<Pair<SecretKey, SecretKey>> testSubscriber = new TestSubscriber<>();
+
+        RxCrypto.generateSecretKey(SecretKeyAlgorithm.AES, 256)
+                .flatMap(new Func1<SecretKey, Observable<Pair<SecretKey, SecretKey>>>() {
+                    @Override
+                    public Observable<Pair<SecretKey, SecretKey>> call(SecretKey expectedSecretKey) {
+                        return Observable.combineLatest(Observable.just(expectedSecretKey),
+                                RxCrypto.generateSecretKey(SecretKeyAlgorithm.AES, expectedSecretKey.getEncoded()),
+                                new Func2<SecretKey, SecretKey, Pair<SecretKey, SecretKey>>() {
+                                    @Override
+                                    public Pair<SecretKey, SecretKey> call(SecretKey expected, SecretKey actual) {
+                                        return new Pair<>(expected, actual);
+                                    }
+                                });
+                    }
+                })
+                .subscribe(testSubscriber);
+
+        Pair<SecretKey, SecretKey> pair = checkTestSubscriberAndGetValue(testSubscriber);
+        assertThat(pair.second).isEqualTo(pair.first);
+    }
+
+    @Test
     public void testSymmetricEncryptDecrypt() throws Exception {
         final byte[] plainText = "Something Very Secret".getBytes(Charsets.UTF_8);
         final TestSubscriber<Pair<byte[], SecretKey>> pairTestSubscriber = new TestSubscriber<>();

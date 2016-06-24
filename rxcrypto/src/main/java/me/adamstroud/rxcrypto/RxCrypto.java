@@ -129,9 +129,7 @@ public class RxCrypto {
             @Override
             public void call(Subscriber<? super SecretKey> subscriber) {
                 try {
-                    SecretKey secretKey = SecretKeyFactory
-                            .getInstance(algorithm.providerString, PROVIDER)
-                            .generateSecret(new SecretKeySpec(keyBytes, algorithm.providerString));
+                    SecretKey secretKey = new SecretKeySpec(keyBytes, algorithm.providerString);
 
                     if (!subscriber.isUnsubscribed()) {
                         subscriber.onNext(secretKey);
