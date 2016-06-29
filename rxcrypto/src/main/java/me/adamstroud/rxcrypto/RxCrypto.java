@@ -452,6 +452,7 @@ public class RxCrypto {
                         JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
 
                         writer.writeObject(publicKey);
+                        writer.flush();
                         writer.close();
 
                         if (!subscriber.isUnsubscribed()) {
@@ -481,6 +482,7 @@ public class RxCrypto {
                                         .setPasssword(password.toCharArray());
 
                         writer.writeObject(new JcaPKCS8Generator(privateKey, builder.build()).generate());
+                        writer.flush();
                         writer.close();
 
                         if (!subscriber.isUnsubscribed()) {
@@ -560,6 +562,7 @@ public class RxCrypto {
                                 .setProvider(PROVIDER);
 
                         writer.writeObject(privateKey, builder.build(password.toCharArray()));
+                        writer.flush();
                         writer.close();
 
                         if (!subscriber.isUnsubscribed()) {
