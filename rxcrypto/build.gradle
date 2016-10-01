@@ -53,5 +53,5 @@ dependencies {
 
     androidTestCompile 'junit:junit:4.12'
     androidTestCompile 'com.android.support.test:runner:0.5'
-    androidTestCompile 'org.assertj:assertj-core:3.5.2'
+    androidTestCompile 'org.assertj:assertj-core:2.5.0'
 }
