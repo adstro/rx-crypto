@@ -21,7 +21,6 @@ import android.support.annotation.NonNull;
 
 import com.google.common.base.Charsets;
 
-import org.spongycastle.crypto.InvalidCipherTextException;
 import org.spongycastle.crypto.engines.AESEngine;
 import org.spongycastle.crypto.modes.GCMBlockCipher;
 import org.spongycastle.crypto.params.AEADParameters;
@@ -38,9 +37,12 @@ import org.spongycastle.openssl.jcajce.JceOpenSSLPKCS8EncryptorBuilder;
 import org.spongycastle.openssl.jcajce.JcePEMDecryptorProviderBuilder;
 import org.spongycastle.openssl.jcajce.JcePEMEncryptorBuilder;
 import org.spongycastle.operator.InputDecryptorProvider;
+import org.spongycastle.operator.OperatorCreationException;
 import org.spongycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.spongycastle.pkcs.PKCSException;
 import org.spongycastle.util.io.pem.PemObject;
 
+import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.security.InvalidAlgorithmParameterException;
@@ -55,9 +57,11 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.KeySpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.concurrent.Callable;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -71,7 +75,6 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import rx.Observable;
-import rx.Subscriber;
 
 /**
  * TODO
@@ -104,60 +107,33 @@ public class RxCrypto {
      */
     public static Observable<SecretKey> generateSecretKey(@NonNull final SecretKeyAlgorithm algorithm,
                                                           @IntRange(from=0) final int keyLength) {
-        return Observable.create(new Observable.OnSubscribe<SecretKey>() {
+        return Observable.fromCallable(new Callable<SecretKey>() {
             @Override
-            public void call(Subscriber<? super SecretKey> subscriber) {
-                try {
-                    KeyGenerator keyGenerator = KeyGenerator.getInstance(algorithm.providerString, PROVIDER);
-                    keyGenerator.init(keyLength, new SecureRandom());
-                    SecretKey secretKey = keyGenerator.generateKey();
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(secretKey);
-                        subscriber.onCompleted();
-                    }
-                } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
-                    subscriber.onError(e);
-                }
+            public SecretKey call() throws NoSuchProviderException, NoSuchAlgorithmException {
+                KeyGenerator keyGenerator = KeyGenerator.getInstance(algorithm.providerString, PROVIDER);
+                keyGenerator.init(keyLength, new SecureRandom());
+                return keyGenerator.generateKey();
             }
         });
     }
 
     public static Observable<SecretKey> generateSecretKey(@NonNull final SecretKeyAlgorithm algorithm,
                                                           @NonNull final byte[] keyBytes) {
-        return Observable.create(new Observable.OnSubscribe<SecretKey>() {
+        return Observable.fromCallable(new Callable<SecretKey>() {
             @Override
-            public void call(Subscriber<? super SecretKey> subscriber) {
-                try {
-                    SecretKey secretKey = new SecretKeySpec(keyBytes, algorithm.providerString);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(secretKey);
-                        subscriber.onCompleted();
-                    }
-                } catch (Throwable e) {
-                    subscriber.onError(e);
-                }
+            public SecretKey call() {
+                return new SecretKeySpec(keyBytes, algorithm.providerString);
             }
         });
     }
 
     public static Observable<PrivateKey> generatePrivateKey(@NonNull final String algorithm,
                                                             @NonNull final byte[] keyBytes) {
-        return Observable.create(new Observable.OnSubscribe<PrivateKey>() {
+        return Observable.fromCallable(new Callable<PrivateKey>() {
             @Override
-            public void call(Subscriber<? super PrivateKey> subscriber) {
-                try {
-                    final KeyFactory keyFactory = KeyFactory.getInstance(algorithm, PROVIDER);
-                    final PrivateKey privateKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(privateKey);
-                        subscriber.onCompleted();
-                    }
-                } catch (Throwable e) {
-                    subscriber.onError(e);
-                }
+            public PrivateKey call() throws NoSuchProviderException, NoSuchAlgorithmException, InvalidKeySpecException {
+                final KeyFactory keyFactory = KeyFactory.getInstance(algorithm, PROVIDER);
+                return keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
             }
         });
     }
@@ -167,29 +143,21 @@ public class RxCrypto {
                                                    @NonNull final byte[] iv,
                                                    @NonNull final byte[] plaintext,
                                                    @NonNull final String aad) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                try {
-                    AEADParameters params =
-                            new AEADParameters(new KeyParameter(secretKey.getEncoded()),
-                                    TAG_LENGTH,
-                                    iv,
-                                    aad.getBytes(Charsets.UTF_8));
+            public byte[] call() throws Exception {
+                AEADParameters params =
+                        new AEADParameters(new KeyParameter(secretKey.getEncoded()),
+                                TAG_LENGTH,
+                                iv,
+                                aad.getBytes(Charsets.UTF_8));
 
-                    GCMBlockCipher gcm = new GCMBlockCipher(new AESEngine());
-                    gcm.init(true, params);
-                    byte[] cipherText = new byte[gcm.getOutputSize(plaintext.length)];
-                    int offOut = gcm.processBytes(plaintext, 0, plaintext.length, cipherText, 0);
-                    gcm.doFinal(cipherText, offOut);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(cipherText);
-                        subscriber.onCompleted();
-                    }
-                } catch (InvalidCipherTextException e) {
-                    subscriber.onError(e);
-                }
+                GCMBlockCipher gcm = new GCMBlockCipher(new AESEngine());
+                gcm.init(true, params);
+                byte[] cipherText = new byte[gcm.getOutputSize(plaintext.length)];
+                int offOut = gcm.processBytes(plaintext, 0, plaintext.length, cipherText, 0);
+                gcm.doFinal(cipherText, offOut);
+                return cipherText;
             }
         });
     }
@@ -198,54 +166,35 @@ public class RxCrypto {
                                              @NonNull final byte[] iv,
                                              @NonNull final byte[] plaintext,
                                              @NonNull final String aad) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                try {
-                    Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, PROVIDER);
-                    cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH, iv));
-                    cipher.updateAAD(aad.getBytes(Charsets.UTF_8));
-                    byte[] cipherText = cipher.doFinal(plaintext);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(cipherText);
-                        subscriber.onCompleted();
-                    }
-                } catch (NoSuchAlgorithmException
-                        | NoSuchProviderException
-                        | NoSuchPaddingException
-                        | IllegalBlockSizeException
-                        | BadPaddingException
-                        | InvalidKeyException
-                        | InvalidAlgorithmParameterException e) {
-                    subscriber.onError(e);
-                }
+            public byte[] call() throws NoSuchPaddingException,
+                    NoSuchAlgorithmException,
+                    NoSuchProviderException,
+                    InvalidAlgorithmParameterException,
+                    InvalidKeyException, BadPaddingException,
+                    IllegalBlockSizeException {
+                Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, PROVIDER);
+                cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH, iv));
+                cipher.updateAAD(aad.getBytes(Charsets.UTF_8));
+                return cipher.doFinal(plaintext);
             }
         });
     }
 
     public static Observable<byte[]> encrypt(@NonNull final PublicKey publicKey,
                                              @NonNull final byte[] plaintext) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                try {
-                    Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
-                    cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-                    byte[] cipherText = cipher.doFinal(plaintext);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(cipherText);
-                        subscriber.onCompleted();
-                    }
-                } catch (NoSuchAlgorithmException
-                        | NoSuchProviderException
-                        | NoSuchPaddingException
-                        | IllegalBlockSizeException
-                        | BadPaddingException
-                        | InvalidKeyException e) {
-                    subscriber.onError(e);
-                }
+            public byte[] call() throws NoSuchPaddingException,
+                    NoSuchAlgorithmException,
+                    NoSuchProviderException,
+                    InvalidKeyException,
+                    BadPaddingException,
+                    IllegalBlockSizeException {
+                Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
+                cipher.init(Cipher.ENCRYPT_MODE, publicKey);
+                return cipher.doFinal(plaintext);
             }
         });
     }
@@ -254,50 +203,36 @@ public class RxCrypto {
                                              @NonNull final byte[] iv,
                                              @NonNull final byte[] cipherText,
                                              @NonNull final String aad) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-
-                try {
-                    Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, PROVIDER);
-                    cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH, iv));
-                    cipher.updateAAD(aad.getBytes(Charsets.UTF_8));
-                    byte[] plainText = cipher.doFinal(cipherText);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(plainText);
-                        subscriber.onCompleted();
-                    }
-                } catch (NoSuchAlgorithmException
-                        | NoSuchProviderException
-                        | NoSuchPaddingException
-                        | IllegalBlockSizeException
-                        | BadPaddingException
-                        | InvalidKeyException
-                        | InvalidAlgorithmParameterException e) {
-                    subscriber.onError(e);
-                }
+            public byte[] call() throws NoSuchPaddingException,
+                    NoSuchAlgorithmException,
+                    NoSuchProviderException,
+                    InvalidAlgorithmParameterException,
+                    InvalidKeyException,
+                    BadPaddingException,
+                    IllegalBlockSizeException {
+                Cipher cipher = Cipher.getInstance(SYMMETRIC_TRANSFORMATION, PROVIDER);
+                cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH, iv));
+                cipher.updateAAD(aad.getBytes(Charsets.UTF_8));
+                return cipher.doFinal(cipherText);
             }
         });
     }
 
     public static Observable<byte[]> decrypt(@NonNull final PrivateKey privateKey,
                                              @NonNull final byte[] cipherText) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                try {
-                    Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
-                    cipher.init(Cipher.DECRYPT_MODE, privateKey);
-                    byte[] plainText = cipher.doFinal(cipherText);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(plainText);
-                        subscriber.onCompleted();
-                    }
-                } catch (Throwable e) {
-                    subscriber.onError(e);
-                }
+            public byte[] call() throws NoSuchPaddingException,
+                    NoSuchAlgorithmException,
+                    NoSuchProviderException,
+                    InvalidKeyException,
+                    BadPaddingException,
+                    IllegalBlockSizeException {
+                Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
+                cipher.init(Cipher.DECRYPT_MODE, privateKey);
+                return cipher.doFinal(cipherText);
             }
         });
     }
@@ -313,210 +248,146 @@ public class RxCrypto {
     public static Observable<SecretKey> generatePasswordBasedSecretKey(@NonNull final char[] password,
                                                                        @IntRange(from = 0) final int keyLength,
                                                                        @NonNull final byte[] salt) {
-        return Observable.create(new Observable.OnSubscribe<SecretKey>() {
+        return Observable.fromCallable(new Callable<SecretKey>() {
             @Override
-            public void call(Subscriber<? super SecretKey> subscriber) {
-                try {
-                    // Number of PBKDF2 hardening rounds to use. Larger values increase
-                    // computation time. You should select a value that causes computation
-                    // to take >100ms.
+            public SecretKey call() throws NoSuchProviderException,
+                    NoSuchAlgorithmException,
+                    InvalidKeySpecException {
+                // Number of PBKDF2 hardening rounds to use. Larger values increase
+                // computation time. You should select a value that causes computation
+                // to take >100ms.
 
-                    SecretKeyFactory secretKeyFactory = SecretKeyFactory.getInstance(PBE_TRANSFORMATION, PROVIDER);
-                    KeySpec keySpec = new PBEKeySpec(password, salt, PBE_ITERATIONS, keyLength);
-                    SecretKey secretKey = secretKeyFactory.generateSecret(keySpec);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(secretKey);
-                        subscriber.onCompleted();
-                    }
-                } catch (Throwable t) {
-                    subscriber.onError(t);
-                }
+                SecretKeyFactory secretKeyFactory = SecretKeyFactory.getInstance(PBE_TRANSFORMATION, PROVIDER);
+                KeySpec keySpec = new PBEKeySpec(password, salt, PBE_ITERATIONS, keyLength);
+                return secretKeyFactory.generateSecret(keySpec);
             }
         });
     }
 
     public static Observable<KeyPair> generateKeyPair(@IntRange(from=0) final int keyLength) {
-        return Observable.create(new Observable.OnSubscribe<KeyPair>() {
+        return Observable.fromCallable(new Callable<KeyPair>() {
             @Override
-            public void call(Subscriber<? super KeyPair> subscriber) {
-                try {
-                    KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", PROVIDER);
-                    keyPairGenerator.initialize(keyLength, new SecureRandom());
-                    KeyPair keyPair = keyPairGenerator.generateKeyPair();
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(keyPair);
-                        subscriber.onCompleted();
-                    }
-                } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
-                    subscriber.onError(e);
-                }
+            public KeyPair call() throws NoSuchProviderException, NoSuchAlgorithmException {
+                KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", PROVIDER);
+                keyPairGenerator.initialize(keyLength, new SecureRandom());
+                return keyPairGenerator.generateKeyPair();
             }
         });
     }
 
     public static Observable<byte[]> generateHash(final byte[] input) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                try {
-                    MessageDigest messageDigest = MessageDigest.getInstance(MESSAGE_DIGEST_ALGORITHM, PROVIDER);
-                    messageDigest.update(input);
-                    byte[] hash = messageDigest.digest();
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(hash);
-                        subscriber.onCompleted();
-                    }
-                } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
-                    subscriber.onError(e);
-                }
+            public byte[] call() throws NoSuchProviderException, NoSuchAlgorithmException {
+                MessageDigest messageDigest = MessageDigest.getInstance(MESSAGE_DIGEST_ALGORITHM, PROVIDER);
+                messageDigest.update(input);
+                return messageDigest.digest();
             }
         });
     }
 
     public static Observable<PrivateKey> readPrivateKeyFromPem(@NonNull final String pemContents,
                                                                @NonNull final String password) {
-        return Observable.create(new Observable.OnSubscribe<PrivateKey>() {
+        return Observable.fromCallable(new Callable<PrivateKey>() {
             @Override
-            public void call(Subscriber<? super PrivateKey> subscriber) {
-                try {
-                    PrivateKey privateKey;
-                    JcaPEMKeyConverter converter = new JcaPEMKeyConverter().setProvider(PROVIDER);
-                    PEMParser pemParser = new PEMParser(new StringReader(pemContents));
+            public PrivateKey call() throws IOException, OperatorCreationException, PKCSException {
+                PrivateKey privateKey;
+                JcaPEMKeyConverter converter = new JcaPEMKeyConverter().setProvider(PROVIDER);
+                PEMParser pemParser = new PEMParser(new StringReader(pemContents));
 
-                    Object object = pemParser.readObject();
-                    if (object instanceof PEMEncryptedKeyPair) {
-                        PEMEncryptedKeyPair encryptedKeyPair = (PEMEncryptedKeyPair) object;
-                        PEMKeyPair decryptedKeyPair = encryptedKeyPair.decryptKeyPair(new JcePEMDecryptorProviderBuilder().setProvider(PROVIDER).build(password.toCharArray()));
+                Object object = pemParser.readObject();
+                if (object instanceof PEMEncryptedKeyPair) {
+                    PEMEncryptedKeyPair encryptedKeyPair = (PEMEncryptedKeyPair) object;
+                    PEMKeyPair decryptedKeyPair = encryptedKeyPair.decryptKeyPair(new JcePEMDecryptorProviderBuilder().setProvider(PROVIDER).build(password.toCharArray()));
 
-                        privateKey = converter.getPrivateKey(decryptedKeyPair.getPrivateKeyInfo());
-                    } else if (object instanceof PKCS8EncryptedPrivateKeyInfo) {
-                        InputDecryptorProvider provider = new JceOpenSSLPKCS8DecryptorProviderBuilder()
-                                .setProvider(PROVIDER)
-                                .build(password.toCharArray());
-                        PKCS8EncryptedPrivateKeyInfo info = (PKCS8EncryptedPrivateKeyInfo) object;
+                    privateKey = converter.getPrivateKey(decryptedKeyPair.getPrivateKeyInfo());
+                } else if (object instanceof PKCS8EncryptedPrivateKeyInfo) {
+                    InputDecryptorProvider provider = new JceOpenSSLPKCS8DecryptorProviderBuilder()
+                            .setProvider(PROVIDER)
+                            .build(password.toCharArray());
+                    PKCS8EncryptedPrivateKeyInfo info = (PKCS8EncryptedPrivateKeyInfo) object;
 
-                        privateKey = converter.getPrivateKey(info.decryptPrivateKeyInfo(provider));
-                    } else {
-                        throw new IllegalArgumentException("No supported key found in PEM contents");
-                    }
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(privateKey);
-                        subscriber.onCompleted();
-                    }
-                } catch (Throwable e) {
-                    subscriber.onError(e);
+                    privateKey = converter.getPrivateKey(info.decryptPrivateKeyInfo(provider));
+                } else {
+                    throw new IllegalArgumentException("No supported key found in PEM contents");
                 }
+
+                return privateKey;
             }
         });
     }
 
     public static Observable<PublicKey> readPublicKeyFromPem(@NonNull final String pemContents) {
-        return Observable.create(new Observable.OnSubscribe<PublicKey>() {
+        return Observable.fromCallable(new Callable<PublicKey>() {
             @Override
-            public void call(Subscriber<? super PublicKey> subscriber) {
-                try {
-                    PEMParser pemParser = new PEMParser(new StringReader(pemContents));
+            public PublicKey call() throws IOException,
+                    NoSuchProviderException,
+                    NoSuchAlgorithmException,
+                    InvalidKeySpecException {
+                PEMParser pemParser = new PEMParser(new StringReader(pemContents));
 
-                    PemObject pemObject = pemParser.readPemObject();
-                    pemParser.close();
+                PemObject pemObject = pemParser.readPemObject();
+                pemParser.close();
 
-                    byte[] publicBytes = pemObject.getContent();
+                byte[] publicBytes = pemObject.getContent();
 
-                    X509EncodedKeySpec publicSpec = new X509EncodedKeySpec(publicBytes);
+                X509EncodedKeySpec publicSpec = new X509EncodedKeySpec(publicBytes);
 
-                    KeyFactory kf = KeyFactory.getInstance("RSA", PROVIDER);
-                    PublicKey publicKey = kf.generatePublic(publicSpec);
-
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(publicKey);
-                        subscriber.onCompleted();
-                    }
-                } catch (Throwable e) {
-                    subscriber.onError(e);
-                }
+                KeyFactory kf = KeyFactory.getInstance("RSA", PROVIDER);
+                return kf.generatePublic(publicSpec);
             }
         });
     }
 
     public static Observable<byte[]> writeToPem(@NonNull final PublicKey publicKey) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                if (!subscriber.isUnsubscribed()) {
-                    try {
-                        StringWriter stringWriter = new StringWriter();
-                        JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
+            public byte[] call() throws IOException {
+                StringWriter stringWriter = new StringWriter();
+                JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
 
-                        writer.writeObject(publicKey);
-                        writer.flush();
-                        writer.close();
+                writer.writeObject(publicKey);
+                writer.flush();
+                writer.close();
 
-                        if (!subscriber.isUnsubscribed()) {
-                            subscriber.onNext(stringWriter.toString().getBytes(Charsets.UTF_8));
-                            subscriber.onCompleted();
-                        }
-                    } catch (Throwable t) {
-                        subscriber.onError(t);
-                    }
-                }
+                return stringWriter.toString().getBytes(Charsets.UTF_8);
             }
         });
     }
 
     public static Observable<byte[]> writeToPemWithPkcs8(@NonNull final PrivateKey privateKey,
                                                          @NonNull final String password) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                if (!subscriber.isUnsubscribed()) {
-                    try {
-                        StringWriter stringWriter = new StringWriter();
-                        JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
+            public byte[] call() throws IOException, OperatorCreationException {
+                StringWriter stringWriter = new StringWriter();
+                JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
 
-                        JceOpenSSLPKCS8EncryptorBuilder builder =
-                                new JceOpenSSLPKCS8EncryptorBuilder(PKCS8Generator.AES_256_CBC)
-                                        .setPasssword(password.toCharArray());
+                JceOpenSSLPKCS8EncryptorBuilder builder =
+                        new JceOpenSSLPKCS8EncryptorBuilder(PKCS8Generator.AES_256_CBC)
+                                .setPasssword(password.toCharArray());
 
-                        writer.writeObject(new JcaPKCS8Generator(privateKey, builder.build()).generate());
-                        writer.flush();
-                        writer.close();
+                writer.writeObject(new JcaPKCS8Generator(privateKey, builder.build()).generate());
+                writer.flush();
+                writer.close();
 
-                        if (!subscriber.isUnsubscribed()) {
-                            subscriber.onNext(stringWriter.toString().getBytes(Charsets.UTF_8));
-                            subscriber.onCompleted();
-                        }
-
-                    } catch (Throwable e) {
-                        subscriber.onError(e);
-                    }
-                }
+                return stringWriter.toString().getBytes(Charsets.UTF_8);
             }
         });
     }
 
     public static Observable<byte[]> wrap(@NonNull final PublicKey publicKey,
                                           @NonNull final SecretKey secretKey) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                if (!subscriber.isUnsubscribed()) {
-                    try {
-                        Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
-                        cipher.init(Cipher.WRAP_MODE, publicKey);
-                        final byte[] wrappedKey = cipher.wrap(secretKey);
-
-                        if (!subscriber.isUnsubscribed()) {
-                            subscriber.onNext(wrappedKey);
-                            subscriber.onCompleted();
-                        }
-                    } catch (Throwable e) {
-                        subscriber.onError(e);
-                    }
-                }
+            public byte[] call() throws NoSuchPaddingException,
+                    NoSuchAlgorithmException,
+                    NoSuchProviderException,
+                    InvalidKeyException,
+                    IllegalBlockSizeException {
+                Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
+                cipher.init(Cipher.WRAP_MODE, publicKey);
+                return cipher.wrap(secretKey);
             }
         });
     }
@@ -524,23 +395,15 @@ public class RxCrypto {
     public static Observable<SecretKey> unwrap(@NonNull final PrivateKey privateKey,
                                                @NonNull final byte[] wrappedKey,
                                                @NonNull final SecretKeyAlgorithm algorithm) {
-        return Observable.create(new Observable.OnSubscribe<SecretKey>() {
+        return Observable.fromCallable(new Callable<SecretKey>() {
             @Override
-            public void call(Subscriber<? super SecretKey> subscriber) {
-                if (!subscriber.isUnsubscribed()) {
-                    try {
-                        Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
-                        cipher.init(Cipher.UNWRAP_MODE, privateKey);
-                        SecretKey key = (SecretKey) cipher.unwrap(wrappedKey, algorithm.providerString, Cipher.SECRET_KEY);
-
-                        if (!subscriber.isUnsubscribed()) {
-                            subscriber.onNext(key);
-                            subscriber.onCompleted();
-                        }
-                    } catch (Throwable e) {
-                        subscriber.onError(e);
-                    }
-                }
+            public SecretKey call() throws NoSuchPaddingException,
+                    NoSuchAlgorithmException,
+                    NoSuchProviderException,
+                    InvalidKeyException {
+                Cipher cipher = Cipher.getInstance(ASYMMETRIC_TRANSFORMATION, PROVIDER);
+                cipher.init(Cipher.UNWRAP_MODE, privateKey);
+                return (SecretKey) cipher.unwrap(wrappedKey, algorithm.providerString, Cipher.SECRET_KEY);
             }
         });
     }
@@ -550,29 +413,20 @@ public class RxCrypto {
      */
     public static Observable<byte[]> writeToPem(@NonNull final PrivateKey privateKey,
                                                 @NonNull final String password) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
-                if (!subscriber.isUnsubscribed()) {
-                    try {
-                        StringWriter stringWriter = new StringWriter();
-                        JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
+            public byte[] call() throws IOException {
+                StringWriter stringWriter = new StringWriter();
+                JcaPEMWriter writer = new JcaPEMWriter(stringWriter);
 
-                        JcePEMEncryptorBuilder builder = new JcePEMEncryptorBuilder(PKCS8_ENCRYPTION_ALGORITHM)
-                                .setProvider(PROVIDER);
+                JcePEMEncryptorBuilder builder = new JcePEMEncryptorBuilder(PKCS8_ENCRYPTION_ALGORITHM)
+                        .setProvider(PROVIDER);
 
-                        writer.writeObject(privateKey, builder.build(password.toCharArray()));
-                        writer.flush();
-                        writer.close();
+                writer.writeObject(privateKey, builder.build(password.toCharArray()));
+                writer.flush();
+                writer.close();
 
-                        if (!subscriber.isUnsubscribed()) {
-                            subscriber.onNext(stringWriter.toString().getBytes(Charsets.UTF_8));
-                            subscriber.onCompleted();
-                        }
-                    } catch (Throwable e) {
-                        subscriber.onError(e);
-                    }
-                }
+                return stringWriter.toString().getBytes(Charsets.UTF_8);
             }
         });
     }
@@ -586,16 +440,12 @@ public class RxCrypto {
     }
 
     private static Observable<byte[]> generateRandomBytes(final int numberOfBytes) {
-        return Observable.create(new Observable.OnSubscribe<byte[]>() {
+        return Observable.fromCallable(new Callable<byte[]>() {
             @Override
-            public void call(Subscriber<? super byte[]> subscriber) {
+            public byte[] call() {
                 byte[] randomBytes = new byte[numberOfBytes];
                 new SecureRandom().nextBytes(randomBytes);
-
-                if (!subscriber.isUnsubscribed()) {
-                    subscriber.onNext(randomBytes);
-                    subscriber.onCompleted();
-                }
+                return randomBytes;
             }
         });
     }
