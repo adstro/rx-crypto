@@ -74,6 +74,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import me.adamstroud.prngfixes.PRNGFixes;
 import rx.Observable;
 
 /**

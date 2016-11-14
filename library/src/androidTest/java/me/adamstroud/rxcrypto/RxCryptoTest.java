@@ -46,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.crypto.SecretKey;
 
+import me.adamstroud.prngfixes.PRNGFixes;
 import rx.Observable;
 import rx.functions.Func1;
 import rx.functions.Func2;
