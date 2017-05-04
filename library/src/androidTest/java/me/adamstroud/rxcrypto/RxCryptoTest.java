@@ -16,6 +16,7 @@
 
 package me.adamstroud.rxcrypto;
 
+import android.annotation.SuppressLint;
 import android.support.test.InstrumentationRegistry;
 import android.util.Base64;
 import android.util.Log;
@@ -59,6 +60,7 @@ import static org.assertj.core.api.Java6Assertions.assertThat;
  *
  * @author Adam Stroud &#60;<a href="mailto:adam.stroud@gmail.com">adam.stroud@gmail.com</a>&#62;
  */
+@SuppressLint("RxLeakedSubscription")
 public class RxCryptoTest {
     private static final String TAG = RxCryptoTest.class.getSimpleName();
     private static final String PROVIDER = "SC";
