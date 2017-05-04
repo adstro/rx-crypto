@@ -19,6 +19,7 @@
     <!-- Disable InvalidPackage check for spongy castle -->
     <issue id="InvalidPackage">
         <ignore regexp="org.spongycastle.*" />
+        <ignore regexp="guava.*\.jar" />
     </issue>
 
     <issue id="TrulyRandom" severity="error" />
