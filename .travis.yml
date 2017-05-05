@@ -1,5 +1,7 @@
 language: android
 android:
+  licenses:
+    - '.+'
 
 jdk:
   - oraclejdk8
